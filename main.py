@@ -1,5 +1,4 @@
 import json
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +6,8 @@ from pathlib import Path
 import keyboard
 
 import capture
+import detect_icons
+import detect_level
 import ocr_engine
 import talent_db
 import watchlist
@@ -17,6 +18,8 @@ _log_dir = Path(__file__).parent / "logs"
 _log_dir.mkdir(exist_ok=True)
 
 _running = True
+
+LEVEL_MAP = {0: "", 1: "Lv1", 2: "Lv2", 3: "Lv3"}
 
 
 def _log(entry: dict) -> None:
@@ -30,64 +33,81 @@ def _log(entry: dict) -> None:
 def _scan_and_speak(mode: str) -> None:
     cfg = load_config()
     roi = cfg["roi"]
+    layout = cfg["layout"]
     min_conf = cfg.get("ocr", {}).get("min_confidence", 0.6)
     min_score = cfg.get("fuzzy_match", {}).get("min_score", 75)
     voice_rate = cfg.get("output", {}).get("voice_rate", 200)
-
-    img = capture.capture_roi(roi["x"], roi["y"], roi["width"], roi["height"])
-
-    raw_items = ocr_engine.recognize(img, min_confidence=min_conf)
+    white_thr = layout.get("level_white_threshold", 220)
 
     ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
     mode_label = "WATCH" if mode == "watchlist" else "FULL"
-    print(f"\n[{ts}] [{mode_label}] 扫描完成")
+    print(f"\n[{ts}] [{mode_label}] 扫描中...")
 
-    if not raw_items:
-        print(f"  OCR: 未识别到任何文字")
-        _log({"event": "scan", "mode": mode, "detected": [], "matched": []})
-        if cfg.get("output", {}).get("voice_enabled", True):
-            tts.speak("未识别到天赋，请确认悬停面板已弹出", rate=voice_rate)
-        return
+    img = capture.capture_roi(roi["x"], roi["y"], roi["width"], roi["height"])
+    rows = detect_icons.slice_rows(img, layout["row_height"])
 
-    detected_texts = [text for text, _ in raw_items]
-    print(f"  OCR 原始识别 ({len(raw_items)}): {', '.join(raw_items[:30])}")
+    detected: list[dict] = []
 
-    resolved: list[dict] = []
-    for text in detected_texts:
-        result = talent_db.lookup(text, min_score=min_score)
+    for i, row_img in enumerate(rows):
+        icon_area, text_area, level_area = detect_icons.split_row(
+            row_img,
+            layout["icon_x"],
+            layout["icon_width"],
+            layout["text_x"],
+            layout["level_line_y_offset"],
+            layout["level_window_height"],
+        )
+
+        line_count = detect_level.count_lines(level_area, white_thr)
+
+        raw_items = ocr_engine.recognize(text_area, min_confidence=min_conf)
+        if not raw_items:
+            continue
+
+        full_text = "".join(t for t, _ in raw_items)
+        if not full_text:
+            continue
+
+        level_str = str(line_count) if line_count in (1, 2, 3) else None
+        result = talent_db.lookup(full_text, min_score=min_score, level=level_str)
         if result:
-            resolved.append(result)
+            detected.append(result)
+            lvl_tag = LEVEL_MAP.get(line_count, "")
+            tag = "=" if result.get("exact") else f"~{result.get('score',0)}%"
+            print(f"  [{tag}] [{lvl_tag}] {result['name']}: {result['effect'][:60]}")
+
+    print(f"  共匹配 {len(detected)} 个天赋")
 
     if mode == "watchlist":
-        matched = watchlist.check_matches(detected_texts, min_score=min_score)
-        print(f"  已匹配: {matched if matched else '无'}")
+        all_names = [d["name"] for d in detected]
+        matched = watchlist.check_matches(all_names, min_score=min_score)
+        print(f"  监视命中: {matched if matched else '无'}")
         _log({
             "event": "scan",
             "mode": "watchlist",
-            "detected": detected_texts,
+            "detected": all_names,
             "matched": matched,
+            "details": detected,
         })
         if matched:
             tts.speak("匹配到：" + "、".join(matched), rate=voice_rate)
+        elif not detected:
+            tts.speak("未识别到天赋，请确认悬停面板已弹出", rate=voice_rate)
         else:
             tts.speak("未命中监视清单", rate=voice_rate)
     else:
-        print(f"  天赋匹配: {len(resolved)} 个")
-        for r in resolved:
-            tag = "=" if r.get("exact") else f"~{r.get('score',0)}%"
-            print(f"    [{tag}] {r['name']}: {r['effect'][:60]}")
         _log({
             "event": "scan",
             "mode": "full",
-            "detected": detected_texts,
-            "resolved": [r["name"] for r in resolved],
+            "resolved": [f"{d['name']}{LEVEL_MAP.get(3 if not d.get('level') else int(d['level']), '')}" for d in detected],
+            "details": detected,
         })
-        if not resolved:
-            tts.speak("未匹配到任何天赋", rate=voice_rate)
+        if not detected:
+            tts.speak("未识别到天赋，请确认悬停面板已弹出", rate=voice_rate)
             return
         lines = []
-        for r in resolved:
-            lines.append(f"{r['name']}：{r['effect']}")
+        for d in detected:
+            lines.append(f"{d['name']}：{d['effect']}")
         tts.speak("，".join(lines), rate=voice_rate)
 
 
@@ -123,12 +143,13 @@ def main() -> None:
     tts.init()
 
     print("=" * 50)
-    print("  NPC 天赋 OCR 辅助工具 已启动")
+    print("  NPC 天赋 OCR 辅助工具 已启动  v1.1")
     print(f"  {hotkeys['scan_watchlist']} : 监视扫描（仅命中播报）")
     print(f"  {hotkeys['scan_full']}     : 全量查询（播报所有效果）")
     print(f"  {hotkeys['reload']}  : 重新加载配置 & 监视清单")
     print(f"  {hotkeys['exit']}   : 退出")
     print(f"  ROI: {cfg['roi']}")
+    print(f"  等级检测: 白线投影法")
     print("=" * 50)
 
     if cfg.get("output", {}).get("voice_enabled", True):

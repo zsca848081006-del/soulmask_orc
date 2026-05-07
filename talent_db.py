@@ -13,9 +13,10 @@ def load() -> None:
         _talents = json.load(f)
 
 
-def lookup(name: str, min_score: int = 75) -> dict | None:
+def lookup(name: str, min_score: int = 75, level: str | None = None) -> dict | None:
     if name in _talents:
-        return {"name": name, "effect": _talents[name]["effect"], "exact": True}
+        entry = _talents[name]
+        return _build_result(name, entry, exact=True, level=level)
 
     best_score = 0
     best_name = ""
@@ -26,14 +27,38 @@ def lookup(name: str, min_score: int = 75) -> dict | None:
             best_name = key
 
     if best_score >= min_score:
-        return {
-            "name": best_name,
-            "effect": _talents[best_name]["effect"],
-            "exact": False,
-            "score": best_score,
-        }
+        return _build_result(best_name, _talents[best_name], exact=False, score=best_score, level=level)
 
     return None
+
+
+def _build_result(
+    name: str,
+    entry: dict,
+    exact: bool,
+    score: int | None = None,
+    level: str | None = None,
+) -> dict:
+    if level and level in entry:
+        effect = entry[level]
+        level_used = level
+    else:
+        available = sorted(entry.keys(), key=int)
+        level_used = available[-1]
+        effect = entry[level_used]
+
+    result = {
+        "name": name,
+        "effect": effect,
+        "level": level_used,
+        "exact": exact,
+    }
+    if score is not None:
+        result["score"] = score
+    if len(entry) > 1:
+        all_levels = {k: entry[k] for k in sorted(entry, key=int)}
+        result["allLevels"] = all_levels
+    return result
 
 
 def get_all_names() -> list[str]:

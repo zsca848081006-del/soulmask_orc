@@ -5,6 +5,15 @@
     "width": 853,
     "height": 1440
   },
+  "layout": {
+    "row_height": 68,
+    "icon_x": 28,
+    "icon_width": 72,
+    "text_x": 100,
+    "level_line_y_offset": 40,
+    "level_window_height": 20,
+    "level_white_threshold": 220
+  },
   "hotkeys": {
     "scan_watchlist": "ctrl+shift+q",
     "scan_full": "ctrl+shift+f",
