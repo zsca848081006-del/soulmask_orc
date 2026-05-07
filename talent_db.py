@@ -55,9 +55,6 @@ def _build_result(
     }
     if score is not None:
         result["score"] = score
-    if len(entry) > 1:
-        all_levels = {k: entry[k] for k in sorted(entry, key=int)}
-        result["allLevels"] = all_levels
     return result
 
 

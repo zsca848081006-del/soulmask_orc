@@ -19,7 +19,7 @@ _log_dir.mkdir(exist_ok=True)
 
 _running = True
 
-LEVEL_MAP = {0: "", 1: "Lv1", 2: "Lv2", 3: "Lv3"}
+LEVEL_MAP = {0: "--", 1: "Lv1", 2: "Lv2", 3: "Lv3"}
 
 
 def _log(entry: dict) -> None:
