@@ -1,0 +1,25 @@
+{
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 853,
+    "height": 1440
+  },
+  "hotkeys": {
+    "scan_watchlist": "ctrl+shift+q",
+    "scan_full": "ctrl+shift+f",
+    "reload": "ctrl+shift+r",
+    "exit": "ctrl+shift+e"
+  },
+  "ocr": {
+    "min_confidence": 0.6
+  },
+  "fuzzy_match": {
+    "min_score": 75
+  },
+  "output": {
+    "voice_enabled": true,
+    "voice_rate": 200
+  },
+  "poll_interval_ms": 500
+}
