@@ -177,10 +177,10 @@ def main() -> None:
         tts.speak("天赋助手已启动", rate=cfg.get("output", {}).get("voice_rate", 200))
 
     while _running:
-        tts.pump()
         time.sleep(0.1)
 
     print("正在退出...")
+    tts.shutdown()
     keyboard.unhook_all_hotkeys()
 
 
